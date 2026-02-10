@@ -1,0 +1,20 @@
+{
+  "name": "facturero-sri-notifier",
+  "version": "0.1.0",
+  "bin": {
+    "facturero-sri-notifier": "bin/facturero-sri-notifier.js"
+  },
+  "scripts": {
+    "build": "echo \"The build step is not required when using JavaScript!\" && exit 0",
+    "cdk": "cdk",
+    "test": "jest"
+  },
+  "devDependencies": {
+    "aws-cdk": "2.1105.0",
+    "jest": "^30"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.237.1",
+    "constructs": "^10.0.0"
+  }
+}
