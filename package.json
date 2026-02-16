@@ -12,15 +12,19 @@
   },
   "devDependencies": {
     "@types/jest": "^30",
+    "@types/aws-lambda": "^8.10.150",
     "@types/node": "^24.10.1",
     "jest": "^30",
     "ts-jest": "^29",
-    "aws-cdk": "2.1105.0",
+    "aws-cdk": "^2.238.0",
+    "aws-cdk-lib": "^2.237.1",
+    "esbuild": "^0.25.5",
     "ts-node": "^10.9.2",
     "typescript": "~5.9.3"
   },
   "dependencies": {
-    "aws-cdk-lib": "^2.237.1",
+    "@aws-sdk/client-s3": "^3.879.0",
+    "@aws-sdk/client-ses": "^3.879.0",
     "constructs": "^10.0.0"
   }
 }
