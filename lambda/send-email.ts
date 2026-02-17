@@ -5,8 +5,11 @@ import { XMLParser } from 'fast-xml-parser';
 
 
 type EmailPayload = {
+    eventType: string;
+    status: string;
     accessKey: string;
     environment?: 'test' | 'production';
+    timestamp: string;
 };
 
 const s3 = new S3Client({});
@@ -18,12 +21,19 @@ const getPayload = (body: string): Required<EmailPayload> => {
         const parsed = JSON.parse(body) as EmailPayload;
         return {
             accessKey: parsed.accessKey,
-            environment: parsed.environment || 'test'
+            environment: parsed.environment || 'test',
+            eventType: parsed.eventType,
+            status: parsed.status,
+            timestamp: parsed.timestamp
         };
     } catch {
         return {
             accessKey: '',
-            environment: 'test'
+            environment: 'test',
+            eventType: '',
+            status: '',
+            timestamp: ''
+
         };
     }
 };
@@ -40,24 +50,24 @@ const extractEmailFromXML = (xmlString: string): string => {
         ignoreAttributes: false,
         attributeNamePrefix: "@_"
     });
-    
+
     const parsed = parser.parse(xmlString);
     const infoAdicional = parsed?.factura?.infoAdicional;
-    
+
     if (!infoAdicional?.campoAdicional) {
         throw new Error('No infoAdicional section found in XML');
     }
-    
-    const campos = Array.isArray(infoAdicional.campoAdicional) 
-        ? infoAdicional.campoAdicional 
+
+    const campos = Array.isArray(infoAdicional.campoAdicional)
+        ? infoAdicional.campoAdicional
         : [infoAdicional.campoAdicional];
-    
+
     const emailField = campos.find((campo: any) => campo['@_nombre'] === 'Email');
-    
+
     if (!emailField || !emailField['#text']) {
         throw new Error('Email field not found in XML');
     }
-    
+
     return emailField['#text'];
 };
 
@@ -108,7 +118,7 @@ export const handler: SQSHandler = async (event) => {
             const subject = `Factura autorizada - ${subjectEnv}`;
 
             const body = `Estimado cliente,\n\nAdjunto encontrará la factura autorizada correspondiente a la clave de acceso ${payload.accessKey}.\n\nSaludos cordiales.`;
-            
+
             const rawMessage = [
                 `From: ${sender}`,
                 `To: ${recipient}`,
@@ -147,7 +157,7 @@ export const handler: SQSHandler = async (event) => {
 
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
-            
+
             console.error('Failed to process record:', {
                 messageId: record.messageId,
                 error: errorMessage,

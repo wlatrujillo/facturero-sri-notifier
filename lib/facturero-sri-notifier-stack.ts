@@ -5,6 +5,7 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambdaNodejs from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
 import * as s3 from 'aws-cdk-lib/aws-s3';
+import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as path from 'path';
 
 export class FactureroSriNotifierStack extends cdk.Stack {
@@ -52,5 +53,53 @@ export class FactureroSriNotifierStack extends cdk.Stack {
 
     testBucket.grantRead(sendEmailFunction);
     productionBucket.grantRead(sendEmailFunction);
+
+    // Reference existing DynamoDB tables
+    const vouchersTable = dynamodb.Table.fromTableName(
+      this,
+      'VouchersTable',
+      'prd-facturero-sri-vouchers'
+    );
+
+    const vouchersTestTable = dynamodb.Table.fromTableName(
+      this,
+      'VouchersTestTable',
+      'prd-facturero-sri-vouchers-test'
+    );
+
+    // Create Lambda function to process DynamoDB streams
+    const streamProcessorFunction = new lambdaNodejs.NodejsFunction(this, 'StreamProcessorFunction', {
+      entry: path.join(__dirname, '../lambda/stream-processor.ts'),
+      handler: 'handler',
+      runtime: cdk.aws_lambda.Runtime.NODEJS_24_X,
+      timeout: cdk.Duration.seconds(60),
+      environment: {
+        QUEUE_URL: queue.queueUrl
+      }
+    });
+
+    // Add DynamoDB Stream event sources for both tables
+    streamProcessorFunction.addEventSource(
+      new eventSources.DynamoEventSource(vouchersTable, {
+        startingPosition: cdk.aws_lambda.StartingPosition.LATEST,
+        batchSize: 10,
+        retryAttempts: 3
+      })
+    );
+
+    streamProcessorFunction.addEventSource(
+      new eventSources.DynamoEventSource(vouchersTestTable, {
+        startingPosition: cdk.aws_lambda.StartingPosition.LATEST,
+        batchSize: 10,
+        retryAttempts: 3
+      })
+    );
+
+    // Grant permissions to send messages to SQS queue
+    queue.grantSendMessages(streamProcessorFunction);
+
+    // Grant read permissions on DynamoDB streams
+    vouchersTable.grantStreamRead(streamProcessorFunction);
+    vouchersTestTable.grantStreamRead(streamProcessorFunction);
   }
 }
