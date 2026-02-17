@@ -9,6 +9,9 @@ import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as path from 'path';
 
 export class FactureroSriNotifierStack extends cdk.Stack {
+
+
+
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
@@ -55,16 +58,24 @@ export class FactureroSriNotifierStack extends cdk.Stack {
     productionBucket.grantRead(sendEmailFunction);
 
     // Reference existing DynamoDB tables
-    const vouchersTable = dynamodb.Table.fromTableName(
+    const latestStreamArnVouchersTable: string = 'arn:aws:dynamodb:us-east-1:030608081964:table/prd-facturero-sri-vouchers/stream/2026-02-17T17:56:56.997';
+    const latestStreamVouchersTestTable: string = 'arn:aws:dynamodb:us-east-1:030608081964:table/prd-facturero-sri-vouchers-test/stream/2026-02-17T17:56:57.118';
+    const vouchersTable = dynamodb.Table.fromTableAttributes(
       this,
       'VouchersTable',
-      'prd-facturero-sri-vouchers'
+      {
+        tableName: 'prd-facturero-sri-vouchers',
+        tableStreamArn: latestStreamArnVouchersTable
+      }
     );
 
-    const vouchersTestTable = dynamodb.Table.fromTableName(
+    const vouchersTestTable = dynamodb.Table.fromTableAttributes(
       this,
       'VouchersTestTable',
-      'prd-facturero-sri-vouchers-test'
+      {
+        tableName: 'prd-facturero-sri-vouchers-test',
+        tableStreamArn: latestStreamVouchersTestTable
+      }
     );
 
     // Create Lambda function to process DynamoDB streams
