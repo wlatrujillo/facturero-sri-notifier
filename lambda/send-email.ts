@@ -1,6 +1,7 @@
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { SESClient, SendRawEmailCommand } from '@aws-sdk/client-ses';
 import type { SQSHandler } from 'aws-lambda';
+import { XMLParser } from 'fast-xml-parser';
 
 
 type EmailPayload = {
@@ -40,6 +41,32 @@ const getCompanyIdFromAccessKey = (accessKey: string): string => {
     return companyId;
 };
 
+const extractEmailFromXML = (xmlString: string): string => {
+    const parser = new XMLParser({
+        ignoreAttributes: false,
+        attributeNamePrefix: "@_"
+    });
+    
+    const parsed = parser.parse(xmlString);
+    const infoAdicional = parsed?.factura?.infoAdicional;
+    
+    if (!infoAdicional?.campoAdicional) {
+        throw new Error('No infoAdicional section found in XML');
+    }
+    
+    const campos = Array.isArray(infoAdicional.campoAdicional) 
+        ? infoAdicional.campoAdicional 
+        : [infoAdicional.campoAdicional];
+    
+    const emailField = campos.find((campo: any) => campo['@_nombre'] === 'Email');
+    
+    if (!emailField || !emailField['#text']) {
+        throw new Error('Email field not found in XML');
+    }
+    
+    return emailField['#text'];
+};
+
 export const handler: SQSHandler = async (event) => {
     const sender = process.env.SENDER_EMAIL;
 
@@ -74,10 +101,10 @@ export const handler: SQSHandler = async (event) => {
         }
 
         const xmlBuffer = Buffer.from(await xmlBody.Body.transformToByteArray());
+        const xmlString = xmlBuffer.toString('utf-8');
         const xmlBase64 = xmlBuffer.toString('base64');
         const boundary = `sri-notifier-${Date.now()}`;
-        //TODO: Read recipient from xml file
-        const recipient = 'nelson.trujillo.ec@gmail.com';
+        const recipient = extractEmailFromXML(xmlString);
         const rawMessage = [
             `From: ${sender}`,
             `To: ${recipient}`,
