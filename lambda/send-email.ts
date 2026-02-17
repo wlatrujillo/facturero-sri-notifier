@@ -77,62 +77,94 @@ export const handler: SQSHandler = async (event) => {
         throw new Error('Missing required environment variables.');
     }
 
+    const failures: Array<{ messageId: string; error: string }> = [];
+
     for (const record of event.Records) {
+        try {
+            const payload = getPayload(record.body);
 
-        const payload = getPayload(record.body);
-
-        if (!payload.accessKey) {
-            throw new Error('Missing accessKey in message payload.');
-        }
-
-        const companyId = getCompanyIdFromAccessKey(payload.accessKey);
-        const bucket = payload.environment === 'production' ? productionBucket : testBucket;
-        const key = `${companyId}/autorizados/${payload.accessKey}.xml`;
-
-
-
-        const xmlBody = await s3.send(new GetObjectCommand({
-            Bucket: bucket,
-            Key: key
-        }));
-
-        if (!xmlBody.Body) {
-            throw new Error(`Empty S3 object body for ${bucket}/${key}.`);
-        }
-
-        const xmlBuffer = Buffer.from(await xmlBody.Body.transformToByteArray());
-        const xmlString = xmlBuffer.toString('utf-8');
-        const xmlBase64 = xmlBuffer.toString('base64');
-        const boundary = `sri-notifier-${Date.now()}`;
-        const recipient = extractEmailFromXML(xmlString);
-        const rawMessage = [
-            `From: ${sender}`,
-            `To: ${recipient}`,
-            `Subject: ${payload.subject}`,
-            'MIME-Version: 1.0',
-            `Content-Type: multipart/mixed; boundary="${boundary}"`,
-            '',
-            `--${boundary}`,
-            'Content-Type: text/plain; charset="UTF-8"',
-            'Content-Transfer-Encoding: 7bit',
-            '',
-            payload.body,
-            '',
-            `--${boundary}`,
-            `Content-Type: application/xml; name="${payload.accessKey}.xml"`,
-            'Content-Transfer-Encoding: base64',
-            `Content-Disposition: attachment; filename="${payload.accessKey}.xml"`,
-            '',
-            xmlBase64,
-            '',
-            `--${boundary}--`,
-            ''
-        ].join('\r\n');
-
-        await ses.send(new SendRawEmailCommand({
-            RawMessage: {
-                Data: Buffer.from(rawMessage)
+            if (!payload.accessKey) {
+                throw new Error('Missing accessKey in message payload.');
             }
-        }));
+
+            const companyId = getCompanyIdFromAccessKey(payload.accessKey);
+            const bucket = payload.environment === 'production' ? productionBucket : testBucket;
+            const key = `${companyId}/autorizados/${payload.accessKey}.xml`;
+
+            const xmlBody = await s3.send(new GetObjectCommand({
+                Bucket: bucket,
+                Key: key
+            }));
+
+            if (!xmlBody.Body) {
+                throw new Error(`Empty S3 object body for ${bucket}/${key}.`);
+            }
+
+            const xmlBuffer = Buffer.from(await xmlBody.Body.transformToByteArray());
+            const xmlString = xmlBuffer.toString('utf-8');
+            const xmlBase64 = xmlBuffer.toString('base64');
+            const boundary = `sri-notifier-${Date.now()}`;
+            const recipient = extractEmailFromXML(xmlString);
+
+            if (!recipient || recipient.trim() === '') {
+                throw new Error('Recipient email not found in XML.');
+            }
+            
+            const rawMessage = [
+                `From: ${sender}`,
+                `To: ${recipient}`,
+                `Subject: ${payload.subject}`,
+                'MIME-Version: 1.0',
+                `Content-Type: multipart/mixed; boundary="${boundary}"`,
+                '',
+                `--${boundary}`,
+                'Content-Type: text/plain; charset="UTF-8"',
+                'Content-Transfer-Encoding: 7bit',
+                '',
+                payload.body,
+                '',
+                `--${boundary}`,
+                `Content-Type: application/xml; name="${payload.accessKey}.xml"`,
+                'Content-Transfer-Encoding: base64',
+                `Content-Disposition: attachment; filename="${payload.accessKey}.xml"`,
+                '',
+                xmlBase64,
+                '',
+                `--${boundary}--`,
+                ''
+            ].join('\r\n');
+
+            await ses.send(new SendRawEmailCommand({
+                RawMessage: {
+                    Data: Buffer.from(rawMessage)
+                }
+            }));
+
+            console.log('Email sent successfully:', {
+                messageId: record.messageId,
+                recipient,
+                accessKey: payload.accessKey
+            });
+
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            
+            console.error('Failed to process record:', {
+                messageId: record.messageId,
+                error: errorMessage,
+                body: record.body
+            });
+
+            failures.push({
+                messageId: record.messageId,
+                error: errorMessage
+            });
+        }
+    }
+
+    // If any messages failed, report them and throw to trigger retry/DLQ
+    if (failures.length > 0) {
+        console.error(`Failed to process ${failures.length} message(s):`, failures);
+        throw new Error(`Failed to process ${failures.length} out of ${event.Records.length} messages`);
     }
 };

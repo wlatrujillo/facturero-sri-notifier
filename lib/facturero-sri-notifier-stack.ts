@@ -11,8 +11,17 @@ export class FactureroSriNotifierStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
+    const deadLetterQueue = new sqs.Queue(this, 'FactureroSriNotifierDLQ', {
+      queueName: 'facturero-sri-notifier-dlq',
+      retentionPeriod: cdk.Duration.days(14)
+    });
+
     const queue = new sqs.Queue(this, 'FactureroSriNotifierQueue', {
-      visibilityTimeout: cdk.Duration.seconds(300)
+      visibilityTimeout: cdk.Duration.seconds(300),
+      deadLetterQueue: {
+        queue: deadLetterQueue,
+        maxReceiveCount: 1
+      }
     });
 
     const sendEmailFunction = new lambdaNodejs.NodejsFunction(this, 'SendEmailFunction', {
