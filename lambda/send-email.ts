@@ -5,8 +5,6 @@ import { XMLParser } from 'fast-xml-parser';
 
 
 type EmailPayload = {
-    subject?: string;
-    body?: string;
     accessKey: string;
     environment?: 'test' | 'production';
 };
@@ -19,15 +17,11 @@ const getPayload = (body: string): Required<EmailPayload> => {
     try {
         const parsed = JSON.parse(body) as EmailPayload;
         return {
-            subject: parsed.subject?.trim() || 'Notification',
-            body: parsed.body?.trim() || body,
             accessKey: parsed.accessKey,
             environment: parsed.environment || 'test'
         };
     } catch {
         return {
-            subject: 'Notification',
-            body,
             accessKey: '',
             environment: 'test'
         };
@@ -109,11 +103,16 @@ export const handler: SQSHandler = async (event) => {
             if (!recipient || recipient.trim() === '') {
                 throw new Error('Recipient email not found in XML.');
             }
+
+            const subjectEnv = payload.environment === 'production' ? 'PRODUCCIÓN' : 'PRUEBAS';
+            const subject = `Factura autorizada - ${subjectEnv}`;
+
+            const body = `Estimado cliente,\n\nAdjunto encontrará la factura autorizada correspondiente a la clave de acceso ${payload.accessKey}.\n\nSaludos cordiales.`;
             
             const rawMessage = [
                 `From: ${sender}`,
                 `To: ${recipient}`,
-                `Subject: ${payload.subject}`,
+                `Subject: ${subject}`,
                 'MIME-Version: 1.0',
                 `Content-Type: multipart/mixed; boundary="${boundary}"`,
                 '',
@@ -121,7 +120,7 @@ export const handler: SQSHandler = async (event) => {
                 'Content-Type: text/plain; charset="UTF-8"',
                 'Content-Transfer-Encoding: 7bit',
                 '',
-                payload.body,
+                body,
                 '',
                 `--${boundary}`,
                 `Content-Type: application/xml; name="${payload.accessKey}.xml"`,
