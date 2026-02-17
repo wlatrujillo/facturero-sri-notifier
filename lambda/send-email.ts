@@ -93,7 +93,7 @@ export const handler: SQSHandler = async (event) => {
 
             const companyId = getCompanyIdFromAccessKey(payload.accessKey);
             const bucket = payload.environment === 'production' ? productionBucket : testBucket;
-            const key = `${companyId}/autorizados/${payload.accessKey}.xml`;
+            const key = `${companyId}/autorizados/${payload.accessKey}_aut.xml`;
 
             const xmlBody = await s3.send(new GetObjectCommand({
                 Bucket: bucket,
