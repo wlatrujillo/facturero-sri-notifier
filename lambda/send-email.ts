@@ -9,7 +9,6 @@ type EmailPayload = {
     eventType: string;
     status: string;
     accessKey: string;
-    environment?: 'test' | 'production';
     timestamp: string;
 };
 
@@ -59,7 +58,7 @@ const wrapText = (text: string, maxChars: number): string[] => {
     return lines;
 };
 
-const generatePdfFromXml = async (xmlString: string, payload: Required<EmailPayload>): Promise<Buffer> => {
+const generatePdfFromXml = async (xmlString: string, payload: Required<EmailPayload>, environment: 'production' | 'test'): Promise<Buffer> => {
     const parser = new XMLParser({
         ignoreAttributes: false,
         attributeNamePrefix: "@_"
@@ -124,7 +123,7 @@ const generatePdfFromXml = async (xmlString: string, payload: Required<EmailPayl
     page.drawText('FACTURA ELECTRÓNICA AUTORIZADA', { x: margin, y, size: 16, font: boldFont });
     y -= 20;
     fieldLine('Clave de acceso', payload.accessKey);
-    fieldLine('Ambiente', payload.environment === 'production' ? 'PRODUCCIÓN' : 'PRUEBAS');
+    fieldLine('Ambiente', environment === 'production' ? 'PRODUCCIÓN' : 'PRUEBAS');
     fieldLine('Generado', payload.timestamp);
     y -= 8;
 
@@ -202,7 +201,6 @@ const generatePdfFromXml = async (xmlString: string, payload: Required<EmailPayl
 const processRecordEmail = async (
     record: SNSEventRecord,
     sender: string,
-    testBucket: string,
     productionBucket: string
 ): Promise<void> => {
     const payload = getPayload(record.Sns.Message);
@@ -212,13 +210,13 @@ const processRecordEmail = async (
     }
 
     const companyId = getCompanyIdFromAccessKey(payload.accessKey);
-    const bucket = payload.environment === 'production' ? productionBucket : testBucket;
     const xmlKey = `${companyId}/autorizados/${payload.accessKey}_aut.xml`;
+    const environment = getEnvironmentFromAccessKey(payload.accessKey);
 
-    const xmlBuffer = await getObjectBuffer(bucket, xmlKey);
+    const xmlBuffer = await getObjectBuffer(productionBucket, xmlKey);
 
     const xmlString = xmlBuffer.toString('utf-8');
-    const pdfBuffer = await generatePdfFromXml(xmlString, payload);
+    const pdfBuffer = await generatePdfFromXml(xmlString, payload, environment);
     const xmlBase64 = xmlBuffer.toString('base64');
     const pdfBase64 = pdfBuffer.toString('base64');
     const boundary = `sri-notifier-${Date.now()}`;
@@ -228,7 +226,7 @@ const processRecordEmail = async (
         throw new Error('Recipient email not found in XML.');
     }
 
-    const subjectEnv = payload.environment === 'production' ? 'PRODUCCIÓN' : 'PRUEBAS';
+    const subjectEnv = environment === 'production' ? 'PRODUCCIÓN' : 'PRUEBAS';
     const subject = `Factura autorizada - ${subjectEnv}`;
 
     const body = `Estimado cliente,\n\nAdjunto encontrará la factura autorizada correspondiente a la clave de acceso ${payload.accessKey}.\n\nSaludos cordiales.`;
@@ -286,7 +284,6 @@ const getPayload = (body: string): Required<EmailPayload> => {
         const parsed = JSON.parse(body) as EmailPayload;
         return {
             accessKey: parsed.accessKey,
-            environment: parsed.environment || 'test',
             eventType: parsed.eventType,
             status: parsed.status,
             timestamp: parsed.timestamp
@@ -294,7 +291,6 @@ const getPayload = (body: string): Required<EmailPayload> => {
     } catch {
         return {
             accessKey: '',
-            environment: 'test',
             eventType: '',
             status: '',
             timestamp: ''
@@ -308,6 +304,11 @@ const getCompanyIdFromAccessKey = (accessKey: string): string => {
     // Example: 010220260117190042180011001100000000001
     const companyId = accessKey.substring(10, 23);
     return companyId;
+};
+
+const getEnvironmentFromAccessKey = (accessKey: string): 'production' | 'test' => {
+    const envChar = accessKey.charAt(23);
+    return envChar === '1' ? 'production' : 'test';
 };
 
 const extractEmailFromXML = (xmlString: string): string => {
@@ -339,18 +340,17 @@ const extractEmailFromXML = (xmlString: string): string => {
 export const handler: SNSHandler = async (event) => {
     const sender = process.env.SENDER_EMAIL;
 
-    const testBucket = process.env.TEST_BUCKET;
-    const productionBucket = process.env.PRODUCTION_BUCKET;
+    const productionBucket = process.env.BUCKET;
 
-    if (!sender || !testBucket || !productionBucket) {
-        throw new Error('Missing required environment variables.');
+    if (!sender || !productionBucket) {
+        throw new Error('Missing required variables.');
     }
 
     const failures: Array<{ messageId: string; error: string }> = [];
 
     for (const record of event.Records) {
         try {
-            await processRecordEmail(record, sender, testBucket, productionBucket);
+            await processRecordEmail(record, sender, productionBucket);
 
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);

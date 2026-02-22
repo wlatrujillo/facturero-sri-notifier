@@ -29,8 +29,7 @@ export class FactureroSriNotifierStack extends cdk.Stack {
       timeout: cdk.Duration.seconds(30),
       environment: {
         SENDER_EMAIL: 'wladimir.trujillo.ec@gmail.com',
-        TEST_BUCKET: 'prd-facturero-sri-vouchers-test',
-        PRODUCTION_BUCKET: 'prd-facturero-sri-vouchers'
+        BUCKET: 'prd-facturero-sri-vouchers'
       }
     });
 
@@ -42,10 +41,8 @@ export class FactureroSriNotifierStack extends cdk.Stack {
       resources: ['*']
     }));
 
-    const testBucket = s3.Bucket.fromBucketName(this, 'SriVouchersTestBucket', 'prd-facturero-sri-vouchers-test');
     const productionBucket = s3.Bucket.fromBucketName(this, 'SriVouchersProductionBucket', 'prd-facturero-sri-vouchers');
 
-    testBucket.grantRead(sendEmailFunction);
     productionBucket.grantRead(sendEmailFunction);
 
     // Reference existing DynamoDB tables
@@ -60,15 +57,6 @@ export class FactureroSriNotifierStack extends cdk.Stack {
       }
     );
 
-    const vouchersTestTable = dynamodb.Table.fromTableAttributes(
-      this,
-      'VouchersTestTable',
-      {
-        tableName: 'prd-facturero-sri-vouchers-test',
-        tableStreamArn: latestStreamVouchersTestTable
-      }
-    );
-
     // Create Lambda function to process DynamoDB streams
     const streamProcessorFunction = new lambdaNodejs.NodejsFunction(this, 'StreamProcessorFunction', {
       entry: path.join(__dirname, '../lambda/stream-processor.ts'),
@@ -80,7 +68,7 @@ export class FactureroSriNotifierStack extends cdk.Stack {
       }
     });
 
-    // Add DynamoDB Stream event sources for both tables
+    // Add DynamoDB Stream event sources for table
     streamProcessorFunction.addEventSource(
       new eventSources.DynamoEventSource(vouchersTable, {
         startingPosition: cdk.aws_lambda.StartingPosition.LATEST,
@@ -89,19 +77,12 @@ export class FactureroSriNotifierStack extends cdk.Stack {
       })
     );
 
-    streamProcessorFunction.addEventSource(
-      new eventSources.DynamoEventSource(vouchersTestTable, {
-        startingPosition: cdk.aws_lambda.StartingPosition.LATEST,
-        batchSize: 10,
-        retryAttempts: 3
-      })
-    );
+
 
     // Grant permissions to publish to SNS topic
     emailTopic.grantPublish(streamProcessorFunction);
 
     // Grant read permissions on DynamoDB streams
     vouchersTable.grantStreamRead(streamProcessorFunction);
-    vouchersTestTable.grantStreamRead(streamProcessorFunction);
   }
 }
