@@ -28,6 +28,7 @@
     "@aws-sdk/client-sqs": "^3.991.0",
     "@aws-sdk/util-dynamodb": "^3.991.0",
     "constructs": "^10.0.0",
-    "fast-xml-parser": "^5.3.6"
+    "fast-xml-parser": "^5.3.6",
+    "pdf-lib": "^1.17.1"
   }
 }
