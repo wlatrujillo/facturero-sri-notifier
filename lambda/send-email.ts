@@ -308,7 +308,7 @@ const getCompanyIdFromAccessKey = (accessKey: string): string => {
 
 const getEnvironmentFromAccessKey = (accessKey: string): 'production' | 'test' => {
     const envChar = accessKey.charAt(23);
-    return envChar === '1' ? 'production' : 'test';
+    return envChar === '1' ? 'test' : 'production';
 };
 
 const extractEmailFromXML = (xmlString: string): string => {

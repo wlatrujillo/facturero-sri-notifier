@@ -61,7 +61,6 @@ async function publishToSns(data: any, tableName: string = 'prd-facturero-sri-vo
     eventType: 'STATUS_CHANGE',
     status: data.status,
     accessKey: data.accessKey,
-    environment: tableName.includes('test') ? 'test' : 'production',
     timestamp: new Date().toISOString()
   };
 
