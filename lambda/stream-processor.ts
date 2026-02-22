@@ -56,7 +56,7 @@ async function processRecord(record: DynamoDBRecord): Promise<void> {
   }
 }
 
-async function publishToSns(data: any, tableName: string = 'facturero-sri-vouchers-test' ): Promise<void> {
+async function publishToSns(data: any, tableName: string = 'prd-facturero-sri-vouchers' ): Promise<void> {
   const message = {
     eventType: 'STATUS_CHANGE',
     status: data.status,
