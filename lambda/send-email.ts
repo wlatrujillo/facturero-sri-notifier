@@ -1,6 +1,6 @@
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { SESClient, SendRawEmailCommand } from '@aws-sdk/client-ses';
-import type { SQSHandler, SQSRecord } from 'aws-lambda';
+import type { SNSHandler, SNSEventRecord } from 'aws-lambda';
 import { XMLParser } from 'fast-xml-parser';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 
@@ -200,12 +200,12 @@ const generatePdfFromXml = async (xmlString: string, payload: Required<EmailPayl
 };
 
 const processRecordEmail = async (
-    record: SQSRecord,
+    record: SNSEventRecord,
     sender: string,
     testBucket: string,
     productionBucket: string
 ): Promise<void> => {
-    const payload = getPayload(record.body);
+    const payload = getPayload(record.Sns.Message);
 
     if (!payload.accessKey) {
         throw new Error('Missing accessKey in message payload.');
@@ -273,7 +273,7 @@ const processRecordEmail = async (
     }));
 
     console.log('Email sent successfully:', {
-        messageId: record.messageId,
+        messageId: record.Sns.MessageId,
         recipient,
         accessKey: payload.accessKey,
         pdfAttached: true
@@ -336,7 +336,7 @@ const extractEmailFromXML = (xmlString: string): string => {
     return emailField['#text'];
 };
 
-export const handler: SQSHandler = async (event) => {
+export const handler: SNSHandler = async (event) => {
     const sender = process.env.SENDER_EMAIL;
 
     const testBucket = process.env.TEST_BUCKET;
@@ -356,19 +356,19 @@ export const handler: SQSHandler = async (event) => {
             const errorMessage = error instanceof Error ? error.message : String(error);
 
             console.error('Failed to process record:', {
-                messageId: record.messageId,
+                messageId: record.Sns.MessageId,
                 error: errorMessage,
-                body: record.body
+                message: record.Sns.Message
             });
 
             failures.push({
-                messageId: record.messageId,
+                messageId: record.Sns.MessageId,
                 error: errorMessage
             });
         }
     }
 
-    // If any messages failed, report them and throw to trigger retry/DLQ
+    // If any messages failed, report them and throw to trigger retry
     if (failures.length > 0) {
         console.error(`Failed to process ${failures.length} message(s):`, failures);
         throw new Error(`Failed to process ${failures.length} out of ${event.Records.length} messages`);

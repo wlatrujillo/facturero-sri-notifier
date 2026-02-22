@@ -1,10 +1,10 @@
 import { DynamoDBStreamEvent, DynamoDBRecord } from 'aws-lambda';
-import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
+import { SNSClient, PublishCommand } from '@aws-sdk/client-sns';
 import { unmarshall } from '@aws-sdk/util-dynamodb';
 import { AttributeValue } from '@aws-sdk/client-dynamodb';
 
-const sqsClient = new SQSClient({});
-const QUEUE_URL = process.env.QUEUE_URL!;
+const snsClient = new SNSClient({});
+const TOPIC_ARN = process.env.TOPIC_ARN!;
 
 export const handler = async (event: DynamoDBStreamEvent): Promise<void> => {
   console.log('Processing DynamoDB Stream event', JSON.stringify(event, null, 2));
@@ -51,12 +51,12 @@ async function processRecord(record: DynamoDBRecord): Promise<void> {
 
   // Check if status changed from RECEIVED or PROCESSING to AUTHORIZED
   if ((oldStatus === 'RECEIVED' || oldStatus === 'PROCESSING') && newStatus === 'AUTHORIZED') {
-    console.log(`Status changed from ${oldStatus} to ${newStatus}, sending SQS message`);
-    await sendSqsMessage(newData, tableName);
+    console.log(`Status changed from ${oldStatus} to ${newStatus}, publishing to SNS`);
+    await publishToSns(newData, tableName);
   }
 }
 
-async function sendSqsMessage(data: any, tableName: string = 'facturero-sri-vouchers-test' ): Promise<void> {
+async function publishToSns(data: any, tableName: string = 'facturero-sri-vouchers-test' ): Promise<void> {
   const message = {
     eventType: 'STATUS_CHANGE',
     status: data.status,
@@ -65,9 +65,9 @@ async function sendSqsMessage(data: any, tableName: string = 'facturero-sri-vouc
     timestamp: new Date().toISOString()
   };
 
-  const command = new SendMessageCommand({
-    QueueUrl: QUEUE_URL,
-    MessageBody: JSON.stringify(message),
+  const command = new PublishCommand({
+    TopicArn: TOPIC_ARN,
+    Message: JSON.stringify(message),
     MessageAttributes: {
       eventType: {
         DataType: 'String',
@@ -80,6 +80,6 @@ async function sendSqsMessage(data: any, tableName: string = 'facturero-sri-vouc
     }
   });
 
-  const result = await sqsClient.send(command);
-  console.log('SQS message sent:', result.MessageId);
+  const result = await snsClient.send(command);
+  console.log('SNS message published:', result.MessageId);
 }

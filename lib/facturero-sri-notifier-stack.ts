@@ -3,7 +3,8 @@ import { Construct } from 'constructs';
 import * as eventSources from 'aws-cdk-lib/aws-lambda-event-sources';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambdaNodejs from 'aws-cdk-lib/aws-lambda-nodejs';
-import * as sqs from 'aws-cdk-lib/aws-sqs';
+import * as sns from 'aws-cdk-lib/aws-sns';
+import * as snsSubscriptions from 'aws-cdk-lib/aws-sns-subscriptions';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as path from 'path';
@@ -15,17 +16,10 @@ export class FactureroSriNotifierStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
-    const deadLetterQueue = new sqs.Queue(this, 'FactureroSriNotifierDLQ', {
-      queueName: 'facturero-sri-notifier-dlq',
-      retentionPeriod: cdk.Duration.days(14)
-    });
-
-    const queue = new sqs.Queue(this, 'FactureroSriNotifierQueue', {
-      visibilityTimeout: cdk.Duration.seconds(300),
-      deadLetterQueue: {
-        queue: deadLetterQueue,
-        maxReceiveCount: 1
-      }
+    // Create SNS topic for email notifications
+    const emailTopic = new sns.Topic(this, 'FactureroSriNotifierTopic', {
+      topicName: 'facturero-sri-notifier-topic',
+      displayName: 'Facturero SRI Email Notifications'
     });
 
     const sendEmailFunction = new lambdaNodejs.NodejsFunction(this, 'SendEmailFunction', {
@@ -40,11 +34,8 @@ export class FactureroSriNotifierStack extends cdk.Stack {
       }
     });
 
-    sendEmailFunction.addEventSource(new eventSources.SqsEventSource(queue, {
-      batchSize: 10
-    }));
-
-    queue.grantConsumeMessages(sendEmailFunction);
+    // Subscribe the Lambda function to the SNS topic
+    emailTopic.addSubscription(new snsSubscriptions.LambdaSubscription(sendEmailFunction));
 
     sendEmailFunction.addToRolePolicy(new iam.PolicyStatement({
       actions: ['ses:SendEmail', 'ses:SendRawEmail'],
@@ -85,7 +76,7 @@ export class FactureroSriNotifierStack extends cdk.Stack {
       runtime: cdk.aws_lambda.Runtime.NODEJS_24_X,
       timeout: cdk.Duration.seconds(60),
       environment: {
-        QUEUE_URL: queue.queueUrl
+        TOPIC_ARN: emailTopic.topicArn
       }
     });
 
@@ -106,8 +97,8 @@ export class FactureroSriNotifierStack extends cdk.Stack {
       })
     );
 
-    // Grant permissions to send messages to SQS queue
-    queue.grantSendMessages(streamProcessorFunction);
+    // Grant permissions to publish to SNS topic
+    emailTopic.grantPublish(streamProcessorFunction);
 
     // Grant read permissions on DynamoDB streams
     vouchersTable.grantStreamRead(streamProcessorFunction);
